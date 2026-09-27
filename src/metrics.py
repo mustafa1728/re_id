@@ -82,8 +82,9 @@ def agreement(consensus, labels, metric):
 
 def rank_by_belief(log_w, rng):
     """Candidates by decreasing belief, ties broken at random (e.g. every candidate under a uniform
-    prior), so a tie never silently favors whichever candidate happens to be listed first."""
-    return np.lexsort((rng.random(len(log_w)), -log_w))
+    prior), so a tie never silently favors whichever candidate happens to be listed first. Rounded so
+    that beliefs differing only by float rounding count as tied."""
+    return np.lexsort((rng.random(len(log_w)), -np.round(log_w, 9)))
 
 
 def _srocc(x_ranks, y):

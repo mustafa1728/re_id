@@ -25,6 +25,14 @@ def binary_entropy(q):
     return -q * np.log(q) - (1 - q) * np.log(1 - q)
 
 
+def random_argmax(values, rng, weights=None, tol=1e-6):
+    """Index of the maximum with ties (within tol, to absorb float rounding) broken at random, with
+    probability proportional to `weights` if given -- never just the first or last tied index."""
+    tied = np.flatnonzero(values >= values.max() - tol)
+    p = None if weights is None else weights[tied] / weights[tied].sum()
+    return int(rng.choice(tied, p=p))
+
+
 def bayes_update(log_w, votes, y, eps):
     """Eq. 7: w_j <- w_j (1 - eps)^I(A^j_p = y) eps^I(A^j_p != y), normalized."""
     log_w = log_w + np.where(votes == bool(y), np.log(1 - eps), np.log(eps))
@@ -35,10 +43,12 @@ class EntropySelector:
     """Max-entropy queries (Eq. 9) over a pool of disagreement pairs. Pairs with the same votes
     (A^1_p, ..., A^M_p) always have the same entropy, so the pool is grouped by vote signature: the
     arg max is taken over signatures, and the chosen signature's pairs are used up in random order
-    (a signature stays available until all its pairs have been queried)."""
+    (a signature stays available until all its pairs have been queried). Signatures tied in entropy
+    (e.g. every signature with the same number of votes under a uniform prior) are chosen at random,
+    in proportion to their remaining pairs, i.e. uniformly over the tied pairs."""
 
     def __init__(self, labels_T, pool_i, pool_l, eps, rng):
-        self.eps = eps
+        self.eps, self.rng = eps, rng
         votes = pair_votes(labels_T, pool_i, pool_l)
         _, first, signature = np.unique(np.packbits(votes, axis=1), axis=0, return_index=True, return_inverse=True)
         signature = signature.reshape(-1)
@@ -54,10 +64,10 @@ class EntropySelector:
     def select(self, w):
         h = binary_entropy(posterior_predictive(w.astype(np.float32), self.signatures, self.eps))
         h[self.remaining == 0] = -np.inf
-        s = int(np.argmax(h))
-        if not np.isfinite(h[s]):
+        if not np.isfinite(h.max()):
             return None  # pool used up
-        self.remaining[s] -= 1
+        s = random_argmax(h, self.rng, weights=self.remaining)
+        self.remaining[s] -= 1  # the group is in random order, so this pops a random pair of it
         i, l = self.pairs[self.group_start[s] + self.remaining[s]]
         return int(i), int(l), self.signatures[s] > 0.5, float(h[s] - binary_entropy(self.eps))
 

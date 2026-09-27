@@ -110,9 +110,10 @@ def baselines(cands, top_k):
     metrics = [m for m in METRIC_LABELS if m in values]
     out = {"Median candidate": {"top1": {m: np.median(values[m]) for m in metrics},
                                 "topk": {m: np.median(values[m]) for m in metrics}}}
+    rng = np.random.default_rng(0)  # ties between candidates broken at random, reproducibly
     for name, (field, sign) in UNSUP_CRITERIA.items():
-        score = sign * values[field]
-        order = np.argsort(np.where(np.isnan(score), -np.inf, -score), kind="stable")
+        score = np.where(np.isnan(values[field]), -np.inf, sign * values[field])
+        order = np.lexsort((rng.random(len(score)), -score))
         out[name] = {"top1": {m: values[m][order[0]] for m in metrics},
                      "topk": {m: values[m][order[:top_k]].mean() for m in metrics}}
     return out
